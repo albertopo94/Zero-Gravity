@@ -108,7 +108,7 @@ export async function runAgentLoop(
  */
 function stripMarkdown(text: string): string {
   return text
-    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```\w*/g, '').trim()) // bloques de código
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```\w*/g, '')) // bloques de código
     .replace(/`([^`]+)`/g, '$1')       // inline code
     .replace(/\*\*(.+?)\*\*/g, '$1')   // negritas **
     .replace(/\*(.+?)\*/g, '$1')       // cursiva *

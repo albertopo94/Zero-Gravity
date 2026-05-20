@@ -59,13 +59,28 @@ export class AIRouter {
       const provider = healthyProviders[this.currentIndex % total];
       this.currentIndex = (this.currentIndex + 1) % total;
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const start = performance.now();
+
       try {
         console.log(`[AIRouter] Usando: ${provider.name}`);
-        const stream = await provider.chat(messages, options);
+        const stream = await provider.chat(messages, { ...options, abortSignal: controller.signal });
+
+        clearTimeout(timeoutId);
+        const latency = (performance.now() - start) / 1000;
+        console.log(`[AIRouter] Respuesta de ${provider.name} recibida en ${latency.toFixed(2)}s`);
+
         return { stream, provider: provider.name };
       } catch (error) {
+        clearTimeout(timeoutId);
         lastError = error instanceof Error ? error : new Error(String(error));
-        console.error(`[AIRouter] Error con ${provider.name}: ${lastError.message}`);
+
+        if (lastError.name === 'AbortError' || lastError.message.toLowerCase().includes('abort')) {
+          console.error(`[AIRouter] Timeout de 20s alcanzado para ${provider.name}`);
+        } else {
+          console.error(`[AIRouter] Error con ${provider.name}: ${lastError.message}`);
+        }
       }
     }
 

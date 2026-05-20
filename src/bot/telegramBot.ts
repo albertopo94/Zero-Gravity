@@ -10,10 +10,13 @@ import { HealthStatus } from '../types.js';
  */
 function translateError(message?: string): string {
   if (!message) return 'Error desconocido ❓';
+  if (message.toLowerCase().includes('abort') || message.toLowerCase().includes('timeout')) {
+    return 'El proveedor está demorando demasiado ⏳';
+  }
   if (message.includes('429')) return 'Cuota excedida ⏳';
   if (message.includes('401')) return 'Error de Auth 🔑';
   if (message.includes('404')) return 'Modelo no encontrado 🚫';
-  if (message.toLowerCase().includes('network') || message.toLowerCase().includes('timeout')) return 'Error de red 🌐';
+  if (message.toLowerCase().includes('network')) return 'Error de red 🌐';
   return 'Error desconocido ❓';
 }
 

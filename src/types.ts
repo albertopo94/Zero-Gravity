@@ -9,6 +9,7 @@ export interface ChatOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  abortSignal?: AbortSignal;
 }
 
 // ─── Servicio de IA ─────────────────────────────────────────

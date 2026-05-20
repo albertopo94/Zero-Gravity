@@ -45,9 +45,28 @@ const ALLOWED_USER_IDS = requireEnv('TELEGRAM_ALLOWED_USER_IDS')
 const DB_PATH = process.env.DB_PATH ?? './memory.db';
 const MAX_ITERATIONS = parseInt(process.env.AGENT_LOOP_MAX_ITER ?? '3', 10);
 
+// ─── Blindaje y Observabilidad ──────────────────────────────
+
+function patchConsole() {
+  const originalLog = console.log;
+  const originalError = console.error;
+
+  console.log = (...args: any[]) => {
+    const timestamp = new Date().toISOString();
+    originalLog(`[${timestamp}] [LOG]`, ...args);
+  };
+
+  console.error = (...args: any[]) => {
+    const timestamp = new Date().toISOString();
+    originalError(`[${timestamp}] [ERROR]`, ...args);
+  };
+}
+
 // ─── Arranque ───────────────────────────────────────────────
 
 async function main() {
+  patchConsole();
+
   console.log('');
   console.log('  ⚡ ZeroGravity — Agente de IA Local');
   console.log('  ────────────────────────────────────');
