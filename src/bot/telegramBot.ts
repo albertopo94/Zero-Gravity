@@ -2,7 +2,7 @@ import { Bot } from 'grammy';
 import { runAgentLoop } from '../agentLoop.js';
 import { AIRouter } from '../router/aiRouter.js';
 import { clearHistory } from '../memory/memoryStore.js';
-import { transcribeAudio } from '../services/transcriptionService.js';
+import { TranscriptionRouter } from '../services/transcriptionService.js';
 import { HealthStatus } from '../types.js';
 
 /**
@@ -20,21 +20,34 @@ function translateError(message?: string): string {
 /**
  * Formatea el reporte de salud de los proveedores para Telegram.
  */
-function formatTelegramHealthReport(results: Record<string, HealthStatus>): string {
-  let report = '📡 *Estado de ZeroGravity*:\n\n';
-  let activeCount = 0;
-
-  for (const [provider, status] of Object.entries(results)) {
+function formatTelegramHealthReport(aiResults: Record<string, HealthStatus>, sttResults: Record<string, HealthStatus>): string {
+  let report = '📡 *Estado de ZeroGravity*\n\n';
+  
+  report += '🧠 *Motores de IA (Texto)*:\n';
+  let aiActive = 0;
+  for (const [provider, status] of Object.entries(aiResults)) {
     if (status.up) {
       report += `🟢 *${provider}*: \`${status.latency}ms\`\n`;
-      activeCount++;
+      aiActive++;
     } else {
       const errorMsg = translateError(status.message);
       report += `🔴 *${provider}*: ${errorMsg}\n`;
     }
   }
 
-  report += `\n✅ *${activeCount}/${Object.keys(results).length}* proveedores activos.`;
+  report += '\n🎙️ *Transcripción (Audio)*:\n';
+  let sttActive = 0;
+  for (const [provider, status] of Object.entries(sttResults)) {
+    if (status.up) {
+      report += `🟢 *${provider}*: \`${status.latency}ms\`\n`;
+      sttActive++;
+    } else {
+      const errorMsg = translateError(status.message);
+      report += `🔴 *${provider}*: ${errorMsg}\n`;
+    }
+  }
+
+  report += `\n✅ *${aiActive + sttActive}* proveedores listos.`;
 
   return report;
 }
@@ -45,7 +58,8 @@ function formatTelegramHealthReport(results: Record<string, HealthStatus>): stri
 export function createBot(
   token: string,
   allowedUserIds: number[],
-  router: AIRouter,
+  aiRouter: AIRouter,
+  sttRouter: TranscriptionRouter,
   maxIterations: number
 ): Bot {
   const bot = new Bot(token);
@@ -94,8 +108,12 @@ export function createBot(
     const statusMsg = await ctx.reply('🔍 Verificando estado...');
     
     try {
-      const healthResults = await router.checkAllHealth();
-      const report = formatTelegramHealthReport(healthResults);
+      const [aiResults, sttResults] = await Promise.all([
+        aiRouter.checkAllHealth(),
+        sttRouter.checkAllHealth()
+      ]);
+
+      const report = formatTelegramHealthReport(aiResults, sttResults);
       
       await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, report, {
         parse_mode: 'Markdown',
@@ -115,7 +133,7 @@ export function createBot(
     await ctx.replyWithChatAction('typing');
 
     try {
-      const response = await runAgentLoop(userId, userMessage, router, maxIterations);
+      const response = await runAgentLoop(userId, userMessage, aiRouter, maxIterations);
       await sendResponse(ctx, response);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -138,8 +156,8 @@ export function createBot(
       const audioResponse = await fetch(fileUrl);
       const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
 
-      // 2. Transcribir con round-robin (Groq/AssemblyAI/Deepgram)
-      const { text: transcription, provider: sttProvider } = await transcribeAudio(audioBuffer, file.file_path ?? 'voice.ogg');
+      // 2. Transcribir con el nuevo router
+      const { text: transcription, provider: sttProvider } = await sttRouter.transcribe(audioBuffer, file.file_path ?? 'voice.ogg');
 
       if (!transcription) {
         await ctx.reply('🔇 No pude entender el audio. Intenta de nuevo.');
@@ -150,7 +168,7 @@ export function createBot(
       await ctx.reply(`🎙️ "${transcription}" (transcribió ${sttProvider})`);
       await ctx.replyWithChatAction('typing');
 
-      const response = await runAgentLoop(userId, transcription, router, maxIterations);
+      const response = await runAgentLoop(userId, transcription, aiRouter, maxIterations);
       await sendResponse(ctx, response);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

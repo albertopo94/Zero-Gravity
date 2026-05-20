@@ -1,134 +1,164 @@
 import Groq from 'groq-sdk';
 import { AssemblyAI } from 'assemblyai';
 import { DeepgramClient } from '@deepgram/sdk';
-
-// ─── Interfaces ─────────────────────────────────────────────
-
-interface TranscriptionProvider {
-  name: string;
-  transcribe: (audioBuffer: Buffer, filename: string) => Promise<string>;
-}
+import type { TranscriptionProvider, HealthStatus } from '../types.js';
 
 // ─── Proveedores ────────────────────────────────────────────
 
-function createGroqProvider(): TranscriptionProvider | null {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+export class GroqTranscriptionService implements TranscriptionProvider {
+  name = 'groq-whisper';
+  private client: Groq;
 
-  const client = new Groq({ apiKey });
+  constructor(apiKey: string) {
+    this.client = new Groq({ apiKey });
+  }
 
-  return {
-    name: 'groq-whisper',
-    async transcribe(audioBuffer: Buffer, filename: string): Promise<string> {
-      const safeName = filename.replace('.oga', '.ogg').replace(/^.*\//, '') || 'voice.ogg';
-      const file = new File([new Uint8Array(audioBuffer)], safeName, { type: 'audio/ogg' });
+  async transcribe(audioBuffer: Buffer, filename: string): Promise<string> {
+    const safeName = filename.replace('.oga', '.ogg').replace(/^.*\//, '') || 'voice.ogg';
+    const file = new File([new Uint8Array(audioBuffer)], safeName, { type: 'audio/ogg' });
 
-      const result = await client.audio.transcriptions.create({
-        file,
-        model: 'whisper-large-v3-turbo',
-        language: 'es',
-        response_format: 'text',
-      });
+    const result = await this.client.audio.transcriptions.create({
+      file,
+      model: 'whisper-large-v3-turbo',
+      language: 'es',
+      response_format: 'text',
+    });
 
-      return typeof result === 'string' ? result.trim() : String(result).trim();
-    },
-  };
+    return typeof result === 'string' ? result.trim() : String(result).trim();
+  }
+
+  async healthCheck(): Promise<HealthStatus> {
+    const start = Date.now();
+    try {
+      // Usamos una llamada mínima para verificar la API Key
+      await this.client.models.list();
+      return { up: true, latency: Date.now() - start };
+    } catch (error) {
+      return { 
+        up: false, 
+        message: error instanceof Error ? error.message : String(error),
+        latency: Date.now() - start 
+      };
+    }
+  }
 }
 
-function createAssemblyProvider(): TranscriptionProvider | null {
-  const apiKey = process.env.ASSEMBLYAI_API_KEY;
-  if (!apiKey) return null;
+export class AssemblyTranscriptionService implements TranscriptionProvider {
+  name = 'assemblyai';
+  private client: AssemblyAI;
 
-  const client = new AssemblyAI({ apiKey });
+  constructor(apiKey: string) {
+    this.client = new AssemblyAI({ apiKey });
+  }
 
-  return {
-    name: 'assemblyai',
-    async transcribe(audioBuffer: Buffer): Promise<string> {
-      const result = await client.transcripts.transcribe({
-        audio: audioBuffer,
-        language_detection: true,
+  async transcribe(audioBuffer: Buffer): Promise<string> {
+    const result = await this.client.transcripts.transcribe({
+      audio: audioBuffer,
+      language_detection: true,
+    });
+
+    if (result.status === 'error') {
+      throw new Error(`AssemblyAI error: ${result.error}`);
+    }
+
+    return (result.text ?? '').trim();
+  }
+
+  async healthCheck(): Promise<HealthStatus> {
+    const start = Date.now();
+    try {
+      // Verificamos conectividad básica
+      await fetch('https://api.assemblyai.com/v2/transcript', {
+        headers: { Authorization: (this.client as any).apiKey }
       });
-
-      if (result.status === 'error') {
-        throw new Error(`AssemblyAI error: ${result.error}`);
-      }
-
-      return (result.text ?? '').trim();
-    },
-  };
+      return { up: true, latency: Date.now() - start };
+    } catch (error) {
+      return { up: false, message: String(error), latency: Date.now() - start };
+    }
+  }
 }
 
-function createDeepgramProvider(): TranscriptionProvider | null {
-  const apiKey = process.env.DEEPGRAM_API_KEY;
-  if (!apiKey) return null;
+export class DeepgramTranscriptionService implements TranscriptionProvider {
+  name = 'deepgram';
+  private client: DeepgramClient;
 
-  const deepgram = new DeepgramClient(apiKey);
+  constructor(apiKey: string) {
+    this.client = new DeepgramClient(apiKey);
+  }
 
-  return {
-    name: 'deepgram',
-    async transcribe(audioBuffer: Buffer): Promise<string> {
-      const { result } = await deepgram.listen.prerecorded.transcribeFile(audioBuffer, {
-        model: 'nova-3',
-        language: 'es',
-        smart_format: true,
-      });
+  async transcribe(audioBuffer: Buffer): Promise<string> {
+    const { result } = await this.client.listen.prerecorded.transcribeFile(audioBuffer, {
+      model: 'nova-3',
+      language: 'es',
+      smart_format: true,
+    });
 
-      const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-      return (transcript ?? '').trim();
-    },
-  };
+    const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+    return (transcript ?? '').trim();
+  }
+
+  async healthCheck(): Promise<HealthStatus> {
+    const start = Date.now();
+    try {
+      await this.client.manage.getProjects();
+      return { up: true, latency: Date.now() - start };
+    } catch (error) {
+      return { up: false, message: String(error), latency: Date.now() - start };
+    }
+  }
 }
 
 // ─── Router de Transcripción ────────────────────────────────
 
-let providers: TranscriptionProvider[] = [];
-let currentIndex = 0;
+export class TranscriptionRouter {
+  private providers: TranscriptionProvider[] = [];
+  private statusMap: Map<string, HealthStatus> = new Map();
+  private currentIndex = 0;
 
-export function initTranscriptionProviders(): string[] {
-  providers = [];
-
-  const groq = createGroqProvider();
-  if (groq) providers.push(groq);
-
-  const assembly = createAssemblyProvider();
-  if (assembly) providers.push(assembly);
-
-  const deepgram = createDeepgramProvider();
-  if (deepgram) providers.push(deepgram);
-
-  return providers.map((p) => p.name);
-}
-
-/**
- * Transcribe audio con round-robin y fallback.
- * Rota entre proveedores y si uno falla, pasa al siguiente.
- */
-export async function transcribeAudio(audioBuffer: Buffer, filename: string): Promise<{ text: string; provider: string }> {
-  if (providers.length === 0) {
-    throw new Error('[Transcription] No hay proveedores de transcripción configurados.');
+  constructor(providers: TranscriptionProvider[]) {
+    this.providers = providers;
   }
 
-  const startIndex = currentIndex;
+  async checkAllHealth(): Promise<Record<string, HealthStatus>> {
+    const results = await Promise.all(
+      this.providers.map(async (p) => {
+        const status = await p.healthCheck();
+        this.statusMap.set(p.name, status);
+        return { name: p.name, status };
+      })
+    );
 
-  for (let i = 0; i < providers.length; i++) {
-    const index = (startIndex + i) % providers.length;
-    const provider = providers[index];
-
-    try {
-      console.log(`[Transcription] Intentando con ${provider.name}...`);
-      const text = await provider.transcribe(audioBuffer, filename);
-
-      if (text) {
-        // Avanzar round-robin para la próxima llamada
-        currentIndex = (index + 1) % providers.length;
-        console.log(`[Transcription] Éxito con ${provider.name}: "${text.substring(0, 60)}..."`);
-        return { text, provider: provider.name };
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.warn(`[Transcription] Fallo con ${provider.name}: ${msg}`);
+    const report: Record<string, HealthStatus> = {};
+    for (const res of results) {
+      report[res.name] = res.status;
     }
+    return report;
   }
 
-  throw new Error('[Transcription] Todos los proveedores fallaron.');
+  async transcribe(audioBuffer: Buffer, filename: string): Promise<{ text: string; provider: string }> {
+    const healthyProviders = this.providers.filter(p => this.statusMap.get(p.name)?.up !== false);
+
+    if (healthyProviders.length === 0) {
+      throw new Error('[Transcription] No hay proveedores de transcripción disponibles o sanos.');
+    }
+
+    const startIndex = this.currentIndex % healthyProviders.length;
+
+    for (let i = 0; i < healthyProviders.length; i++) {
+      const index = (startIndex + i) % healthyProviders.length;
+      const provider = healthyProviders[index];
+
+      try {
+        const text = await provider.transcribe(audioBuffer, filename);
+        if (text) {
+          this.currentIndex = (index + 1) % healthyProviders.length;
+          return { text, provider: provider.name };
+        }
+      } catch (error) {
+        console.warn(`[Transcription] Fallo con ${provider.name}, intentando siguiente...`);
+      }
+    }
+
+    throw new Error('[Transcription] Todos los proveedores fallaron al intentar transcribir.');
+  }
 }

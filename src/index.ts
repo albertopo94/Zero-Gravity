@@ -6,6 +6,12 @@ import { CerebrasService } from './services/cerebrasService.js';
 import { GeminiService } from './services/geminiService.js';
 import { AIRouter } from './router/aiRouter.js';
 import { createBot } from './bot/telegramBot.js';
+import { 
+  GroqTranscriptionService, 
+  AssemblyTranscriptionService, 
+  DeepgramTranscriptionService, 
+  TranscriptionRouter 
+} from './services/transcriptionService.js';
 import type { AIService, HealthStatus } from './types.js';
 
 // ─── Validar variables de entorno ───────────────────────────
@@ -28,6 +34,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+
 const ALLOWED_USER_IDS = requireEnv('TELEGRAM_ALLOWED_USER_IDS')
   .split(',')
   .map((id) => parseInt(id.trim(), 10))
@@ -48,50 +57,82 @@ async function main() {
   initDatabase(DB_PATH);
   await setupTables();
 
-// 2. Configurar proveedores de IA
-const providers: AIService[] = [new GroqService(GROQ_API_KEY)];
+  // 2. Configurar proveedores de IA
+  const providers: AIService[] = [new GroqService(GROQ_API_KEY)];
 
-if (CEREBRAS_API_KEY) {
-  providers.push(new CerebrasService(CEREBRAS_API_KEY));
-  console.log('[Init] Cerebras añadido al round-robin.');
-}
+  if (CEREBRAS_API_KEY) {
+    providers.push(new CerebrasService(CEREBRAS_API_KEY));
+    console.log('[Init] Cerebras añadido al round-robin.');
+  }
 
-if (GEMINI_API_KEY) {
-  providers.push(new GeminiService(GEMINI_API_KEY));
-  console.log('[Init] Gemini añadido al round-robin.');
-}
+  if (GEMINI_API_KEY) {
+    providers.push(new GeminiService(GEMINI_API_KEY));
+    console.log('[Init] Gemini añadido al round-robin.');
+  }
 
-if (OPENROUTER_API_KEY) {
-  providers.push(new OpenRouterService(OPENROUTER_API_KEY, OPENROUTER_MODEL));
-  console.log('[Init] OpenRouter añadido al round-robin.');
-}
+  if (OPENROUTER_API_KEY) {
+    providers.push(new OpenRouterService(OPENROUTER_API_KEY, OPENROUTER_MODEL));
+    console.log('[Init] OpenRouter añadido al round-robin.');
+  }
 
-const router = new AIRouter(providers);
+  const router = new AIRouter(providers);
 
-// 3. Verificar salud de los proveedores
-console.log('[Init] Verificando salud de los proveedores...');
-const healthReport = await router.checkAllHealth();
+  // 2.2 Configurar proveedores de Transcripción
+  const sttProviders: any[] = [new GroqTranscriptionService(GROQ_API_KEY)];
+  
+  if (ASSEMBLYAI_API_KEY) {
+    sttProviders.push(new AssemblyTranscriptionService(ASSEMBLYAI_API_KEY));
+    console.log('[Init] AssemblyAI añadido al pool de audio.');
+  }
+  if (DEEPGRAM_API_KEY) {
+    sttProviders.push(new DeepgramTranscriptionService(DEEPGRAM_API_KEY));
+    console.log('[Init] Deepgram añadido al pool de audio.');
+  }
 
-console.log('  🔍 Estado de los proveedores:');
-console.log('  ──────────────────────────────');
-for (const [name, status] of Object.entries(healthReport)) {
-  const symbol = status.up ? '🟢 UP  ' : '🔴 DOWN';
-  const info = status.up 
-    ? `Latencia: ${status.latency}ms` 
-    : `Error: ${status.message}`;
-  console.log(`  ${symbol} | ${name.padEnd(12)} | ${info}`);
-}
+  const transcriptionRouter = new TranscriptionRouter(sttProviders);
 
-const healthyCount = Object.values(healthReport).filter((s) => s.up).length;
-if (healthyCount === 0) {
-  console.error('❌ CRÍTICO: No hay proveedores de IA disponibles. El bot no podrá responder.');
-} else {
-  console.log(`✅ ${healthyCount} proveedores listos para operar.`);
-}
-console.log('');
+  // 3. Verificar salud de los proveedores
+  console.log('[Init] Verificando salud de los proveedores...');
+  const [aiHealth, sttHealth] = await Promise.all([
+    router.checkAllHealth(),
+    transcriptionRouter.checkAllHealth()
+  ]);
 
-// 4. Crear e iniciar bot
-const bot = createBot(TELEGRAM_BOT_TOKEN, ALLOWED_USER_IDS, router, MAX_ITERATIONS);
+  console.log('  🔍 Estado de la Inteligencia (Texto):');
+  console.log('  ──────────────────────────────');
+  for (const [name, status] of Object.entries(aiHealth)) {
+    const symbol = status.up ? '🟢 UP  ' : '🔴 DOWN';
+    const info = status.up 
+      ? `Latencia: ${status.latency}ms` 
+      : `Error: ${status.message}`;
+    console.log(`  ${symbol} | ${name.padEnd(12)} | ${info}`);
+  }
+
+  console.log('\n  🎙️  Estado de Transcripción (Audio):');
+  console.log('  ──────────────────────────────');
+  for (const [name, status] of Object.entries(sttHealth)) {
+    const symbol = status.up ? '🟢 UP  ' : '🔴 DOWN';
+    const info = status.up 
+      ? `Latencia: ${status.latency}ms` 
+      : `Error: ${status.message}`;
+    console.log(`  ${symbol} | ${name.padEnd(12)} | ${info}`);
+  }
+
+  const healthyAi = Object.values(aiHealth).filter((s) => s.up).length;
+  const healthyStt = Object.values(sttHealth).filter((s) => s.up).length;
+
+  if (healthyAi === 0) {
+    console.warn('⚠️  ALERTA: No hay proveedores de IA (texto) disponibles.');
+  }
+  if (healthyStt === 0) {
+    console.warn('⚠️  ALERTA: No hay proveedores de Transcripción (audio) disponibles.');
+  }
+
+  console.log(`\n✅ Sistema listo: ${healthyAi} IA, ${healthyStt} STT.`);
+  console.log('');
+
+  // 4. Crear e iniciar bot
+  const bot = createBot(TELEGRAM_BOT_TOKEN, ALLOWED_USER_IDS, router, transcriptionRouter, MAX_ITERATIONS);
 
 console.log(`[Init] Usuarios permitidos: ${ALLOWED_USER_IDS.join(', ')}`);
 console.log(`[Init] Max iteraciones por mensaje: ${MAX_ITERATIONS}`);

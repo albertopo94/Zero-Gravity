@@ -25,6 +25,14 @@ export interface AIService {
   healthCheck(): Promise<HealthStatus>;
 }
 
+// ─── Servicio de Transcripción ──────────────────────────────
+
+export interface TranscriptionProvider {
+  name: string;
+  transcribe(audioBuffer: Buffer, filename: string): Promise<string>;
+  healthCheck(): Promise<HealthStatus>;
+}
+
 // ─── Herramientas ───────────────────────────────────────────
 
 export interface ToolResult {
