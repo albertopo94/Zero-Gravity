@@ -24,7 +24,7 @@ export class ElevenLabsService implements TTSService {
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: 'eleven_multilingual_v2',
         }),
         signal: controller.signal,
       });
