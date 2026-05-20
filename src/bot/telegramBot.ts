@@ -1,9 +1,9 @@
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 import { runAgentLoop } from '../agentLoop.js';
 import { AIRouter } from '../router/aiRouter.js';
 import { clearHistory } from '../memory/memoryStore.js';
 import { TranscriptionRouter } from '../services/transcriptionService.js';
-import { HealthStatus } from '../types.js';
+import { HealthStatus, TTSService } from '../types.js';
 
 /**
  * Traduce mensajes de error técnicos a lenguaje humano con emojis.
@@ -63,7 +63,8 @@ export function createBot(
   allowedUserIds: number[],
   aiRouter: AIRouter,
   sttRouter: TranscriptionRouter,
-  maxIterations: number
+  maxIterations: number,
+  ttsService: TTSService | null = null
 ): Bot {
   const bot = new Bot(token);
 
@@ -137,7 +138,12 @@ export function createBot(
 
     try {
       const response = await runAgentLoop(userId, userMessage, aiRouter, maxIterations);
-      await sendResponse(ctx, response);
+      
+      const voiceKeywords = ['habla', 'voz', 'audio', 'nota de voz', 'decime', 'dime', 'hablame', 'háblame', 'escuchar', 'escucha'];
+      const normalizeText = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const triggerVoice = voiceKeywords.some(keyword => normalizeText(userMessage).includes(normalizeText(keyword)));
+
+      await sendResponse(ctx, response, ttsService, triggerVoice);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`[Bot] Error procesando mensaje: ${errorMsg}`);
@@ -172,7 +178,7 @@ export function createBot(
       await ctx.replyWithChatAction('typing');
 
       const response = await runAgentLoop(userId, transcription, aiRouter, maxIterations);
-      await sendResponse(ctx, response);
+      await sendResponse(ctx, response, ttsService, true);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`[Bot] Error procesando audio: ${errorMsg}`);
@@ -184,9 +190,34 @@ export function createBot(
 }
 
 /**
- * Envía la respuesta al usuario, dividiendo si es muy larga.
+ * Envía la respuesta al usuario, convirtiendo a voz si es necesario.
  */
-async function sendResponse(ctx: any, response: string): Promise<void> {
+async function sendResponse(ctx: any, response: string, ttsService: TTSService | null, triggerVoice: boolean): Promise<void> {
+  if (triggerVoice && ttsService) {
+    try {
+      await ctx.replyWithChatAction('record_voice');
+
+      const capText = response.length > 1000 ? response.substring(0, 1000) : response;
+      const audioBuffer = await ttsService.synthesize(capText);
+
+      await ctx.replyWithVoice(new InputFile(audioBuffer, 'voice.ogg'));
+
+      if (response.length > 1000) {
+        await sendTextMessage(ctx, response);
+      }
+      return;
+    } catch (error) {
+      console.error('[Bot] Error en síntesis de voz ElevenLabs, usando fallback de texto:', error);
+    }
+  }
+
+  await sendTextMessage(ctx, response);
+}
+
+/**
+ * Envía la respuesta en formato texto, dividiendo si es muy larga.
+ */
+async function sendTextMessage(ctx: any, response: string): Promise<void> {
   if (response.length > 4096) {
     const chunks = splitMessage(response, 4096);
     for (const chunk of chunks) {
