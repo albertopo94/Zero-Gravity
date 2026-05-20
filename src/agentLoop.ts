@@ -1,20 +1,18 @@
 import type { ChatMessage } from './types.js';
 import { AIRouter } from './router/aiRouter.js';
-import { saveMessage, getHistory, logInteraction } from './memory/memoryStore.js';
+import { saveMessage, getSmartHistory, logInteraction } from './memory/memoryStore.js';
 import { toolRegistry } from './tools/getCurrentTime.js';
 
-const SYSTEM_PROMPT = `Eres ZeroGravity, un asistente personal. Habla de forma natural y cercana, como un amigo que sabe mucho. Evita sonar robótico o formal. No uses abreviaturas raras ni jerga técnica innecesaria.
+const MAX_CONTEXT_CHARS = 20000;
 
-Reglas:
-- Sé directo y claro, sin rodeos.
-- Si no sabes algo, dilo honestamente.
-- No uses formato Markdown (ni negritas, ni listas con guiones, ni encabezados).
+const SYSTEM_PROMPT = `Eres Zero-Gravity. Responde con extrema brevedad y concisión, directo al punto.
+Habla de forma natural, cercana y directa, como un amigo que no desperdicia palabras.
+ESTÁ PROHIBIDO el uso de Markdown (negritas, cursivas, listas, encabezados). Envía solo texto plano limpio.
 
-Herramientas disponibles:
-- get_current_time: Devuelve la hora actual.
+Herramientas:
+- get_current_time: Obtiene la hora actual.
 
-Para usar una herramienta, responde EXACTAMENTE con: [TOOL: nombre_herramienta]
-Solo úsalas cuando sea necesario.`;
+Uso de herramientas: Responde EXACTAMENTE con [TOOL: nombre_herramienta] si es necesario.`;
 
 /**
  * Ejecuta el loop del agente para un mensaje de usuario.
@@ -28,8 +26,8 @@ export async function runAgentLoop(
   // Guardar mensaje del usuario en memoria
   await saveMessage(userId, 'user', userMessage);
 
-  // Construir historial
-  const history = await getHistory(userId);
+  // Construir historial inteligente (Hermes Style)
+  const history = await getSmartHistory(userId, MAX_CONTEXT_CHARS);
   const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...history,
