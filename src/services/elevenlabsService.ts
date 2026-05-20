@@ -7,7 +7,7 @@ export class ElevenLabsService implements TTSService {
 
   constructor(apiKey: string, voiceId?: string) {
     this.apiKey = apiKey;
-    this.voiceId = voiceId || '21m00Tcm4TlvDq8ikWAM';
+    this.voiceId = voiceId || 'EXAVITQu4vr4xnSDxMaL'; // Sarah — free tier
   }
 
   async synthesize(text: string): Promise<Buffer> {
@@ -24,7 +24,7 @@ export class ElevenLabsService implements TTSService {
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_multilingual_v2',
+          model_id: 'eleven_flash_v2_5',
         }),
         signal: controller.signal,
       });
