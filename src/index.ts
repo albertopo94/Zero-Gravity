@@ -12,6 +12,7 @@ import {
   DeepgramTranscriptionService, 
   TranscriptionRouter 
 } from './services/transcriptionService.js';
+import { ElevenLabsService } from './services/elevenlabsService.js';
 import type { AIService, HealthStatus } from './types.js';
 
 // ─── Validar variables de entorno ───────────────────────────
@@ -36,6 +37,8 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 
 const ALLOWED_USER_IDS = requireEnv('TELEGRAM_ALLOWED_USER_IDS')
   .split(',')
@@ -110,11 +113,18 @@ async function main() {
 
   const transcriptionRouter = new TranscriptionRouter(sttProviders);
 
+  let ttsService: ElevenLabsService | null = null;
+  if (ELEVENLABS_API_KEY) {
+    ttsService = new ElevenLabsService(ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID);
+    console.log('[Init] ElevenLabs TTS añadido.');
+  }
+
   // 3. Verificar salud de los proveedores
   console.log('[Init] Verificando salud de los proveedores...');
-  const [aiHealth, sttHealth] = await Promise.all([
+  const [aiHealth, sttHealth, ttsHealthResult] = await Promise.all([
     router.checkAllHealth(),
-    transcriptionRouter.checkAllHealth()
+    transcriptionRouter.checkAllHealth(),
+    ttsService ? ttsService.healthCheck() : Promise.resolve(null)
   ]);
 
   console.log('  🔍 Estado de la Inteligencia (Texto):');
@@ -137,8 +147,19 @@ async function main() {
     console.log(`  ${symbol} | ${name.padEnd(12)} | ${info}`);
   }
 
+  if (ttsService && ttsHealthResult) {
+    console.log('\n  🗣️  Estado de Síntesis (Voz):');
+    console.log('  ──────────────────────────────');
+    const symbol = ttsHealthResult.up ? '🟢 UP  ' : '🔴 DOWN';
+    const info = ttsHealthResult.up 
+      ? `Latencia: ${ttsHealthResult.latency}ms` 
+      : `Error: ${ttsHealthResult.message}`;
+    console.log(`  ${symbol} | ${ttsService.name.padEnd(12)} | ${info}`);
+  }
+
   const healthyAi = Object.values(aiHealth).filter((s) => s.up).length;
   const healthyStt = Object.values(sttHealth).filter((s) => s.up).length;
+  const healthyTts = ttsHealthResult?.up ? 1 : 0;
 
   if (healthyAi === 0) {
     console.warn('⚠️  ALERTA: No hay proveedores de IA (texto) disponibles.');
@@ -147,11 +168,11 @@ async function main() {
     console.warn('⚠️  ALERTA: No hay proveedores de Transcripción (audio) disponibles.');
   }
 
-  console.log(`\n✅ Sistema listo: ${healthyAi} IA, ${healthyStt} STT.`);
+  console.log(`\n✅ Sistema listo: ${healthyAi} IA, ${healthyStt} STT, ${healthyTts} TTS.`);
   console.log('');
 
   // 4. Crear e iniciar bot
-  const bot = createBot(TELEGRAM_BOT_TOKEN, ALLOWED_USER_IDS, router, transcriptionRouter, MAX_ITERATIONS);
+  const bot = createBot(TELEGRAM_BOT_TOKEN, ALLOWED_USER_IDS, router, transcriptionRouter, MAX_ITERATIONS, ttsService);
 
 console.log(`[Init] Usuarios permitidos: ${ALLOWED_USER_IDS.join(', ')}`);
 console.log(`[Init] Max iteraciones por mensaje: ${MAX_ITERATIONS}`);
