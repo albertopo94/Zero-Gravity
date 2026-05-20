@@ -1,0 +1,64 @@
+// ─── Mensajes de chat ───────────────────────────────────────
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface ChatOptions {
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+// ─── Servicio de IA ─────────────────────────────────────────
+
+export interface HealthStatus {
+  up: boolean;
+  message?: string;
+  latency?: number;
+}
+
+export interface AIService {
+  name: string;
+  chat(messages: ChatMessage[], options?: ChatOptions): Promise<AsyncIterable<string>>;
+  healthCheck(): Promise<HealthStatus>;
+}
+
+// ─── Herramientas ───────────────────────────────────────────
+
+export interface ToolResult {
+  success: boolean;
+  data: string;
+}
+
+export interface Tool {
+  name: string;
+  description: string;
+  execute(): ToolResult;
+}
+
+// ─── Configuración del agente ───────────────────────────────
+
+export interface AgentConfig {
+  maxIterations: number;
+  allowedUserIds: number[];
+  dbPath: string;
+}
+
+// ─── Resultado del AI Router ────────────────────────────────
+
+export interface AIRouterResult {
+  stream: AsyncIterable<string>;
+  provider: string;
+}
+
+// ─── Registro de logs ───────────────────────────────────────
+
+export interface InteractionLog {
+  userId: number;
+  prompt: string;
+  response: string;
+  provider: string;
+  timestamp: string;
+}
