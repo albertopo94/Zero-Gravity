@@ -201,16 +201,12 @@ async function sendResponse(ctx: any, response: string, ttsService: TTSService |
       const audioBuffer = await ttsService.synthesize(capText);
 
       await ctx.replyWithVoice(new InputFile(audioBuffer, 'voice.ogg'));
-
-      if (response.length > 1000) {
-        await sendTextMessage(ctx, response);
-      }
-      return;
     } catch (error) {
       console.error('[Bot] Error en síntesis de voz ElevenLabs, usando fallback de texto:', error);
     }
   }
 
+  // Always send text too
   await sendTextMessage(ctx, response);
 }
 
