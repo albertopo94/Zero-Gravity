@@ -34,6 +34,14 @@ export interface TranscriptionProvider {
   healthCheck(): Promise<HealthStatus>;
 }
 
+// ─── Servicio de Síntesis de Voz (TTS) ──────────────────────
+
+export interface TTSService {
+  name: string;
+  synthesize(text: string): Promise<Buffer>;
+  healthCheck(): Promise<HealthStatus>;
+}
+
 // ─── Herramientas ───────────────────────────────────────────
 
 export interface ToolResult {
