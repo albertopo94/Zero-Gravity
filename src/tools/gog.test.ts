@@ -1,5 +1,5 @@
 import { expect, test, describe } from 'bun:test';
-import { parseArgs, validateReadOnly } from './gog.js';
+import { parseArgs, validateReadOnly, simplifyGogOutput } from './gog.js';
 
 describe('GOG Tool - Arguments Parser', () => {
   test('should parse simple space-separated arguments', () => {
@@ -89,6 +89,36 @@ describe('GOG Tool - Arguments Parser escaping and contractions', () => {
 
     const parsedContractionInQuotes = parseArgs("gmail search 'don't do it'");
     expect(parsedContractionInQuotes).toEqual(['gmail', 'search', "don't do it"]);
+  });
+});
+
+describe('GOG Tool - Output Simplification', () => {
+  test('should format gmail search JSON outputs nicely', () => {
+    const rawStdout = JSON.stringify({
+      threads: [
+        { id: 'msg1', from: 'Test From', subject: 'Test Subject', date: '2026-05-21 12:00' }
+      ]
+    });
+    const simplified = simplifyGogOutput(rawStdout, ['gmail', 'search', 'test']);
+    expect(simplified).toContain('[Mensajes encontrados en Gmail');
+    expect(simplified).toContain('#1 | ID: "msg1" | De: "Test From" | Asunto: "Test Subject"');
+    expect(simplified).toContain('El correo #1 es el ÚLTIMO recibido');
+  });
+
+  test('should format gmail get message JSON outputs nicely', () => {
+    const rawStdout = JSON.stringify({
+      id: 'msg1',
+      from: 'Sender Name',
+      date: '2026-05-21 10:00',
+      subject: 'My Subject',
+      snippet: 'This is the body content of the mail.'
+    });
+    const simplified = simplifyGogOutput(rawStdout, ['gmail', 'get', 'msg1']);
+    expect(simplified).toContain('[Detalles del Correo de Gmail]');
+    expect(simplified).toContain('ID: "msg1"');
+    expect(simplified).toContain('De: "Sender Name"');
+    expect(simplified).toContain('Asunto: "My Subject"');
+    expect(simplified).toContain('This is the body content of the mail.');
   });
 });
 

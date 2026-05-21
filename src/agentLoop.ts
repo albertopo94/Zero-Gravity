@@ -93,9 +93,17 @@ export async function runAgentLoop(
 
         // Agregar resultado de la herramienta al historial
         messages.push({ role: 'assistant', content: response });
+        
+        let systemContent = '';
+        if (result.success === false) {
+          systemContent = `[Sistema: La herramienta ${toolName} falló con el mensaje: "${toolOutput}". Explicale esto amigablemente al usuario en tu propio tono de Zero-Gravity, indicando qué falló sin copiar literalmente el bloque de error del sistema técnico ni repetir el formato de llamada de herramienta.]`;
+        } else {
+          systemContent = `Resultado de ${toolName}: ${toolOutput}`;
+        }
+
         messages.push({
           role: 'system',
-          content: `Resultado de ${toolName}: ${toolOutput}`,
+          content: systemContent,
         });
 
         // Continuar el loop para que el LLM procese el resultado
@@ -105,14 +113,24 @@ export async function runAgentLoop(
         messages.push({ role: 'assistant', content: response });
         messages.push({
           role: 'system',
-          content: `Error: La herramienta "${toolName}" no está registrada. Herramientas disponibles: ${Array.from(toolRegistry.keys()).join(', ')}`,
+          content: `[Sistema: La herramienta "${toolName}" no está registrada. Herramientas disponibles: ${Array.from(toolRegistry.keys()).join(', ')}. Explicale esto amigablemente al usuario sin repetir el error de sistema técnico.]`,
         });
         continue;
       }
     }
 
     // Sin llamada a herramienta — es la respuesta final
-    const cleanResponse = stripMarkdown(response);
+    let cleanResponse = stripMarkdown(response);
+
+    // Blindaje de resiliencia: Si la IA repite textualmente un error crudo de gog o del sistema, lo saneamos a lenguaje humano amigable
+    if (
+      cleanResponse.startsWith('Error: El comando') || 
+      cleanResponse.includes('no está permitido o no es de solo lectura') || 
+      cleanResponse.includes('Resultado de gog: Error:') ||
+      cleanResponse.includes('gog: Error: El comando')
+    ) {
+      cleanResponse = 'Che, disculpame pero ese comando específico no está permitido por mis políticas de seguridad o no es de solo lectura. Solo puedo buscar o consultar información en tu Gmail, Calendar o Drive, pero no realizar modificaciones. ¿Querés que pruebe buscar otra cosa?';
+    }
 
     // Guardar en memoria SIN el tag de proveedor
     await saveMessage(userId, 'assistant', cleanResponse, provider);
@@ -125,7 +143,7 @@ export async function runAgentLoop(
   }
 
   if (!finalResponse) {
-    finalResponse = '⚠️ Se alcanzó el límite de iteraciones. Intenta reformular tu pregunta.';
+    finalResponse = 'Che, me quedé corto de intentos tratando de procesar eso. ¿Me lo podés preguntar de otra forma?';
     await saveMessage(userId, 'assistant', finalResponse);
   }
 
