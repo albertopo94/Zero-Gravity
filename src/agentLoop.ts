@@ -96,7 +96,7 @@ export async function runAgentLoop(
         
         let systemContent = '';
         if (result.success === false) {
-          systemContent = `[Sistema: La herramienta ${toolName} falló con el mensaje: "${toolOutput}". Explicale esto amigablemente al usuario en tu propio tono de Zero-Gravity, indicando qué falló sin copiar literalmente el bloque de error del sistema técnico ni repetir el formato de llamada de herramienta.]`;
+          systemContent = `[Sistema: La herramienta ${toolName} falló con el mensaje: "${toolOutput}". Si cometiste un error de sintaxis, banderas incorrectas (como --max-results) o parámetros inválidos, AUTOCORRIGE tu comando y vuelve a intentar llamarlo en tu siguiente turno. Solo si el error es de autenticación o insalvable, explícale amigablemente la situación al usuario en tu tono de Zero-Gravity sin copiar códigos de error técnicos.]`;
         } else {
           systemContent = `Resultado de ${toolName}: ${toolOutput}`;
         }
