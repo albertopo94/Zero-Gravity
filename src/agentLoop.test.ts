@@ -129,4 +129,49 @@ describe("runAgentLoop - Truncation and Stream Error Handling", () => {
     const response = await runAgentLoop(3, "Hello", router, 3);
     expect(response).toContain("⚠️ Hubo un error de conexión con la IA. Por favor, intenta de nuevo.");
   });
+
+  test("should persist intermediate tool calls and system outputs in the database", async () => {
+    toolRegistry.set("test_persist_tool", {
+      name: "test_persist_tool",
+      description: "A tool for persistence test",
+      execute: () => ({ success: true, data: "Persisted output data" })
+    });
+
+    const mockService: AIService = {
+      name: "mock-ai-persist",
+      healthCheck: async () => ({ up: true }),
+      chat: async (messages) => {
+        if (messages.some(m => m.content.includes("Persisted output data"))) {
+          return createStream(["Final response from LLM"]);
+        }
+        return createStream(["[TOOL: test_persist_tool]"]);
+      }
+    };
+
+    const router = new AIRouter([mockService]);
+    await router.checkAllHealth();
+
+    const response = await runAgentLoop(4, "Test persistence", router, 3);
+    toolRegistry.delete("test_persist_tool");
+
+    expect(response).toContain("Final response from LLM");
+
+    // Retrieve database messages directly using getSmartHistory
+    const { getSmartHistory } = await import("./memory/memoryStore.js");
+    const history = await getSmartHistory(4, 20000);
+
+    // Verify all messages are in the history
+    expect(history.length).toBe(4); // User -> Tool call (assistant) -> Tool output (system) -> Final response (assistant)
+    expect(history[0].role).toBe("user");
+    expect(history[0].content).toBe("Test persistence");
+
+    expect(history[1].role).toBe("assistant");
+    expect(history[1].content).toBe("[TOOL: test_persist_tool]");
+
+    expect(history[2].role).toBe("system");
+    expect(history[2].content).toContain("Resultado de test_persist_tool: Persisted output data");
+
+    expect(history[3].role).toBe("assistant");
+    expect(history[3].content).toBe("Final response from LLM");
+  });
 });

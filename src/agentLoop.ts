@@ -24,6 +24,9 @@ Herramientas:
   - Docs: [TOOL: gog docs cat "ID_DE_DOCUMENTO"]
   Nota: Envuelve los argumentos de búsqueda o con espacios en comillas simples (') o comillas dobles (").
 
+Importante para el orden de correos:
+Cuando listes o busques correos, el sistema te los devolverá numerados del más reciente al más antiguo (#1 es el último/más reciente, #2 es el penúltimo, #3 es el antepenúltimo). Para leer el contenido de cualquiera, usa siempre su ID de Gmail correspondiente (ej. [TOOL: gog gmail get "ID"]). NUNCA alucines IDs ni respondas con el correo incorrecto.
+
 Uso de herramientas: Responde EXACTAMENTE con [TOOL: nombre_herramienta] o [TOOL: nombre_herramienta argumentos] si es necesario.`;
 
 /**
@@ -91,8 +94,9 @@ export async function runAgentLoop(
           toolOutput = toolOutput.substring(0, 4000) + '\n\n[Salida truncada por límite de contexto]';
         }
 
-        // Agregar resultado de la herramienta al historial
+        // Agregar resultado de la herramienta al historial y persistirlo en la BD
         messages.push({ role: 'assistant', content: response });
+        await saveMessage(userId, 'assistant', response, provider);
         
         let systemContent = '';
         if (result.success === false) {
@@ -105,16 +109,21 @@ export async function runAgentLoop(
           role: 'system',
           content: systemContent,
         });
+        await saveMessage(userId, 'system', systemContent);
 
         // Continuar el loop para que el LLM procese el resultado
         continue;
       } else {
-        // Herramienta no encontrada — informar al LLM
+        // Herramienta no encontrada — informar al LLM y persistirlo en la BD
         messages.push({ role: 'assistant', content: response });
+        await saveMessage(userId, 'assistant', response, provider);
+
+        const systemContent = `[Sistema: La herramienta "${toolName}" no está registrada. Herramientas disponibles: ${Array.from(toolRegistry.keys()).join(', ')}. Explicale esto amigablemente al usuario sin repetir el error de sistema técnico.]`;
         messages.push({
           role: 'system',
-          content: `[Sistema: La herramienta "${toolName}" no está registrada. Herramientas disponibles: ${Array.from(toolRegistry.keys()).join(', ')}. Explicale esto amigablemente al usuario sin repetir el error de sistema técnico.]`,
+          content: systemContent,
         });
+        await saveMessage(userId, 'system', systemContent);
         continue;
       }
     }
