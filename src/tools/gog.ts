@@ -61,8 +61,13 @@ export function validateReadOnly(args: string[]): boolean {
   
   switch (service) {
     case 'gmail': {
-      if (args[1] === 'search') return true;
-      if (args[1] === 'messages' && args[2] === 'search') return true;
+      const action = args[1]?.toLowerCase();
+      if (action === 'search' || action === 'get' || action === 'raw' || action === 'cat') return true;
+      
+      if (action === 'messages' || action === 'drafts') {
+        const subAction = args[2]?.toLowerCase();
+        if (subAction === 'search' || subAction === 'get' || subAction === 'raw' || subAction === 'cat') return true;
+      }
       return false;
     }
     case 'calendar': {
@@ -70,7 +75,8 @@ export function validateReadOnly(args: string[]): boolean {
       return false;
     }
     case 'drive': {
-      if (args[1] === 'search') return true;
+      const action = args[1]?.toLowerCase();
+      if (action === 'search' || action === 'ls' || action === 'list' || action === 'download' || action === 'dl') return true;
       return false;
     }
     case 'contacts': {
@@ -102,6 +108,15 @@ export const gogTool: Tool = {
     }
 
     const args = parseArgs(argsStr);
+    
+    // Normalize 'cat' synonym to 'get' for Gmail service to tolerate LLM variance
+    if (args[0]?.toLowerCase() === 'gmail') {
+      if (args[1]?.toLowerCase() === 'cat') {
+        args[1] = 'get';
+      } else if ((args[1]?.toLowerCase() === 'messages' || args[1]?.toLowerCase() === 'drafts') && args[2]?.toLowerCase() === 'cat') {
+        args[2] = 'get';
+      }
+    }
     
     if (!validateReadOnly(args)) {
       return {

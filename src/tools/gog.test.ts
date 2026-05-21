@@ -24,9 +24,14 @@ describe('GOG Tool - Arguments Parser', () => {
 });
 
 describe('GOG Tool - Read-Only Validator', () => {
-  test('should allow gmail search commands', () => {
+  test('should allow gmail search and get/raw/cat commands', () => {
     expect(validateReadOnly(['gmail', 'search', 'newer_than:7d'])).toBe(true);
+    expect(validateReadOnly(['gmail', 'get', 'msgId'])).toBe(true);
+    expect(validateReadOnly(['gmail', 'cat', 'msgId'])).toBe(true);
     expect(validateReadOnly(['gmail', 'messages', 'search', 'in:inbox'])).toBe(true);
+    expect(validateReadOnly(['gmail', 'messages', 'get', 'msgId'])).toBe(true);
+    expect(validateReadOnly(['gmail', 'messages', 'cat', 'msgId'])).toBe(true);
+    expect(validateReadOnly(['gmail', 'drafts', 'get', 'draftId'])).toBe(true);
   });
 
   test('should reject gmail write/send/draft commands', () => {
@@ -45,8 +50,11 @@ describe('GOG Tool - Read-Only Validator', () => {
     expect(validateReadOnly(['calendar', 'update', 'primary'])).toBe(false);
   });
 
-  test('should allow drive search', () => {
+  test('should allow drive search and list/download', () => {
     expect(validateReadOnly(['drive', 'search', 'query'])).toBe(true);
+    expect(validateReadOnly(['drive', 'ls'])).toBe(true);
+    expect(validateReadOnly(['drive', 'list'])).toBe(true);
+    expect(validateReadOnly(['drive', 'download', 'fileId'])).toBe(true);
   });
 
   test('should allow sheets get and metadata', () => {
