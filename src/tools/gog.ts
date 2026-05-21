@@ -30,7 +30,7 @@ export function parseArgs(argsStr: string): string[] {
       inDoubleQuote = !inDoubleQuote;
     } else if (char === "'" && !inDoubleQuote) {
       const isContraction = i > 0 && i < argsStr.length - 1 &&
-        /[a-zA-Z0-9]/.test(argsStr[i - 1]) && /[a-zA-Z0-9]/.test(argsStr[i + 1]);
+        /[a-zA-Z0-9\xC0-\xFF]/.test(argsStr[i - 1]) && /[a-zA-Z0-9\xC0-\xFF]/.test(argsStr[i + 1]);
       if (isContraction) {
         current += char;
       } else {
@@ -71,24 +71,28 @@ export function validateReadOnly(args: string[]): boolean {
       return false;
     }
     case 'calendar': {
-      if (args[1] === 'events' || args[1] === 'colors') return true;
+      const action = args[1]?.toLowerCase();
+      if (action === 'events' || action === 'colors') return true;
       return false;
     }
     case 'drive': {
       const action = args[1]?.toLowerCase();
-      if (action === 'search' || action === 'ls' || action === 'list' || action === 'download' || action === 'dl') return true;
+      if (action === 'search' || action === 'ls' || action === 'list') return true;
       return false;
     }
     case 'contacts': {
-      if (args[1] === 'list') return true;
+      const action = args[1]?.toLowerCase();
+      if (action === 'list') return true;
       return false;
     }
     case 'sheets': {
-      if (args[1] === 'get' || args[1] === 'metadata') return true;
+      const action = args[1]?.toLowerCase();
+      if (action === 'get' || action === 'metadata') return true;
       return false;
     }
     case 'docs': {
-      if (args[1] === 'cat') return true;
+      const action = args[1]?.toLowerCase();
+      if (action === 'cat') return true;
       return false;
     }
     default:
@@ -109,12 +113,13 @@ export function simplifyGogOutput(stdout: string, args: string[]): string {
 
     // 1. Gmail Search o Listado de Threads/Messages
     if (service === 'gmail' && (action === 'search' || subAction === 'search')) {
-      if (json.threads && Array.isArray(json.threads)) {
-        if (json.threads.length === 0) {
+      const items = json.threads || json.messages;
+      if (items && Array.isArray(items)) {
+        if (items.length === 0) {
           return 'No se encontraron correos en la búsqueda de Gmail.';
         }
         let output = `[Mensajes encontrados en Gmail (ordenados del más reciente al más antiguo)]\n`;
-        json.threads.forEach((t: any, index: number) => {
+        items.forEach((t: any, index: number) => {
           output += `#${index + 1} | ID: "${t.id}" | De: "${t.from || 'Desconocido'}" | Asunto: "${t.subject || '(Sin Asunto)'}" | Fecha: "${t.date || ''}"\n`;
         });
         output += `\nNota para el LLM sobre el orden cronológico:\n`;
@@ -128,10 +133,15 @@ export function simplifyGogOutput(stdout: string, args: string[]): string {
 
     // 2. Gmail Get o Lectura de Correo Individual
     if (service === 'gmail' && (action === 'get' || subAction === 'get')) {
+      if (json.error) {
+        const errorDetail = typeof json.error === 'object' ? (json.error.message || JSON.stringify(json.error)) : json.error;
+        return `Error al obtener el correo: ${errorDetail}`;
+      }
+
       const id = json.id || json.threadId || '';
-      const from = json.from || json.headers?.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Desconocido';
-      const date = json.date || json.headers?.find((h: any) => h.name.toLowerCase() === 'date')?.value || '';
-      const subject = json.subject || json.headers?.find((h: any) => h.name.toLowerCase() === 'subject')?.value || '(Sin Asunto)';
+      const from = json.from || json.headers?.find((h: any) => h?.name?.toLowerCase() === 'from')?.value || 'Desconocido';
+      const date = json.date || json.headers?.find((h: any) => h?.name?.toLowerCase() === 'date')?.value || '';
+      const subject = json.subject || json.headers?.find((h: any) => h?.name?.toLowerCase() === 'subject')?.value || '(Sin Asunto)';
       const snippet = json.snippet || '';
       const body = json.body || '';
 

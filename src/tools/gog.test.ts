@@ -50,11 +50,12 @@ describe('GOG Tool - Read-Only Validator', () => {
     expect(validateReadOnly(['calendar', 'update', 'primary'])).toBe(false);
   });
 
-  test('should allow drive search and list/download', () => {
+  test('should allow drive search and list, but reject download/dl', () => {
     expect(validateReadOnly(['drive', 'search', 'query'])).toBe(true);
     expect(validateReadOnly(['drive', 'ls'])).toBe(true);
     expect(validateReadOnly(['drive', 'list'])).toBe(true);
-    expect(validateReadOnly(['drive', 'download', 'fileId'])).toBe(true);
+    expect(validateReadOnly(['drive', 'download', 'fileId'])).toBe(false);
+    expect(validateReadOnly(['drive', 'dl', 'fileId'])).toBe(false);
   });
 
   test('should allow sheets get and metadata', () => {
@@ -119,6 +120,35 @@ describe('GOG Tool - Output Simplification', () => {
     expect(simplified).toContain('De: "Sender Name"');
     expect(simplified).toContain('Asunto: "My Subject"');
     expect(simplified).toContain('This is the body content of the mail.');
+  });
+
+  test('should format gmail messages search JSON outputs nicely', () => {
+    const rawStdout = JSON.stringify({
+      messages: [
+        { id: 'msg1', from: 'Test Message Sender', subject: 'Test Message Subject', date: '2026-05-21 14:00' }
+      ]
+    });
+    const simplified = simplifyGogOutput(rawStdout, ['gmail', 'messages', 'search', 'test']);
+    expect(simplified).toContain('[Mensajes encontrados en Gmail');
+    expect(simplified).toContain('#1 | ID: "msg1" | De: "Test Message Sender" | Asunto: "Test Message Subject"');
+    expect(simplified).toContain('El correo #1 es el ÚLTIMO recibido');
+  });
+
+  test('should format gmail get message error JSON outputs nicely', () => {
+    const rawStdout = JSON.stringify({
+      error: {
+        message: 'Requested entity was not found.'
+      }
+    });
+    const simplified = simplifyGogOutput(rawStdout, ['gmail', 'get', 'nonexistent_msg']);
+    expect(simplified).toContain('Error al obtener el correo: Requested entity was not found.');
+  });
+
+  test('should handle calendar, contacts, sheets, and docs casing robustly', () => {
+    expect(validateReadOnly(['CALENDAR', 'EVENTS', 'primary'])).toBe(true);
+    expect(validateReadOnly(['contacts', 'LIST'])).toBe(true);
+    expect(validateReadOnly(['SHEETS', 'GET', 'id'])).toBe(true);
+    expect(validateReadOnly(['docs', 'CAT', 'id'])).toBe(true);
   });
 });
 

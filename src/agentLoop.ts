@@ -29,10 +29,39 @@ Cuando listes o busques correos, el sistema te los devolverá numerados del más
 
 Uso de herramientas: Responde EXACTAMENTE con [TOOL: nombre_herramienta] o [TOOL: nombre_herramienta argumentos] si es necesario.`;
 
+const userLocks = new Map<number, Promise<any>>();
+
 /**
  * Ejecuta el loop del agente para un mensaje de usuario.
  */
 export async function runAgentLoop(
+  userId: number,
+  userMessage: string,
+  router: AIRouter,
+  maxIterations: number
+): Promise<string> {
+  const existingLock = userLocks.get(userId) || Promise.resolve();
+
+  let resolveLock: () => void;
+  const newLock = new Promise<void>((resolve) => {
+    resolveLock = resolve;
+  });
+
+  userLocks.set(userId, newLock);
+
+  await existingLock;
+
+  try {
+    return await runAgentLoopInternal(userId, userMessage, router, maxIterations);
+  } finally {
+    resolveLock!();
+    if (userLocks.get(userId) === newLock) {
+      userLocks.delete(userId);
+    }
+  }
+}
+
+async function runAgentLoopInternal(
   userId: number,
   userMessage: string,
   router: AIRouter,
@@ -80,6 +109,11 @@ export async function runAgentLoop(
     // Verificar si la respuesta solicita una herramienta
     const toolMatch = response.match(/\[TOOL:\s*(\w+)(?:\s+([\s\S]+?))?\]/);
     if (toolMatch) {
+      if (iteration === maxIterations) {
+        console.log(`[AgentLoop] Límite de iteraciones alcanzado en llamada a herramienta, omitiendo ejecución.`);
+        await saveMessage(userId, 'assistant', response, provider);
+        break;
+      }
       const toolName = toolMatch[1];
       const toolArgs = toolMatch[2]?.trim();
       const tool = toolRegistry.get(toolName);
@@ -91,7 +125,9 @@ export async function runAgentLoop(
         // Truncate tool output if it exceeds 4000 characters
         let toolOutput = result.data;
         if (toolOutput.length > 4000) {
-          toolOutput = toolOutput.substring(0, 4000) + '\n\n[Salida truncada por límite de contexto]';
+          const lastNewline = toolOutput.lastIndexOf('\n', 4000);
+          const truncateIndex = lastNewline !== -1 && lastNewline > 3500 ? lastNewline : 4000;
+          toolOutput = toolOutput.substring(0, truncateIndex) + '\n\n[Salida truncada por límite de contexto]';
         }
 
         // Agregar resultado de la herramienta al historial y persistirlo en la BD
@@ -172,7 +208,6 @@ function stripMarkdown(text: string): string {
     .replace(/_(.+?)_/g, '$1')         // cursiva _
     .replace(/^#{1,6}\s+/gm, '')       // encabezados
     .replace(/^[-*+]\s+/gm, '• ')      // listas con viñetas
-    .replace(/^\d+\.\s+/gm, (m) => m)  // listas numeradas (dejar)
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
     .trim();
 }

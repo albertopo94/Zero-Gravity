@@ -1,6 +1,6 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeAll, afterAll, beforeEach } from "bun:test";
 import { runAgentLoop } from "./agentLoop.js";
-import { initDatabase, closeDatabase, setupTables } from "./memory/database.js";
+import { initDatabase, closeDatabase, setupTables, getDatabase } from "./memory/database.js";
 import { AIRouter } from "./router/aiRouter.js";
 import { toolRegistry } from "./tools/getCurrentTime.js";
 import type { AIService, ChatMessage } from "./types.js";
@@ -38,8 +38,18 @@ describe("runAgentLoop - Truncation and Stream Error Handling", () => {
     delete process.env.TURSO_AUTH_TOKEN;
 
     // Initialize an in-memory SQLite database
-    initDatabase(":memory:");
+    const db = initDatabase(":memory:");
     await setupTables();
+    
+    // Clear tables of any leftover persistent data from physical :memory: file
+    await db.execute("DELETE FROM messages");
+    await db.execute("DELETE FROM logs");
+  });
+
+  beforeEach(async () => {
+    const db = getDatabase();
+    await db.execute("DELETE FROM messages");
+    await db.execute("DELETE FROM logs");
   });
 
   afterAll(() => {
@@ -173,5 +183,65 @@ describe("runAgentLoop - Truncation and Stream Error Handling", () => {
 
     expect(history[3].role).toBe("assistant");
     expect(history[3].content).toBe("Final response from LLM");
+  });
+
+  test("should bypass tool execution on final iteration and return fallback response", async () => {
+    let executed = false;
+    toolRegistry.set("test_bypass_tool", {
+      name: "test_bypass_tool",
+      description: "Should not be executed",
+      execute: () => {
+        executed = true;
+        return { success: true, data: "Should not run" };
+      }
+    });
+
+    const mockService: AIService = {
+      name: "mock-ai-bypass",
+      healthCheck: async () => ({ up: true }),
+      chat: async () => {
+        return createStream(["[TOOL: test_bypass_tool]"]);
+      }
+    };
+
+    const router = new AIRouter([mockService]);
+    await router.checkAllHealth();
+
+    const response = await runAgentLoop(5, "Test bypass", router, 1);
+    toolRegistry.delete("test_bypass_tool");
+
+    expect(executed).toBe(false);
+    expect(response).toContain("Che, me quedé corto de intentos tratando de procesar eso. ¿Me lo podés preguntar de otra forma?");
+  });
+
+  test("should serialize concurrent agent loop calls for the same user", async () => {
+    const executionOrder: string[] = [];
+
+    const mockService: AIService = {
+      name: "mock-ai-concurrency",
+      healthCheck: async () => ({ up: true }),
+      chat: async (messages) => {
+        const userMsg = [...messages].reverse().find(m => m.role === 'user')?.content;
+        executionOrder.push(`start-${userMsg}`);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        executionOrder.push(`end-${userMsg}`);
+        return createStream(["Done"]);
+      }
+    };
+
+    const router = new AIRouter([mockService]);
+    await router.checkAllHealth();
+
+    const p1 = runAgentLoop(6, "Msg1", router, 1);
+    const p2 = runAgentLoop(6, "Msg2", router, 1);
+
+    await Promise.all([p1, p2]);
+
+    expect(executionOrder).toEqual([
+      "start-Msg1",
+      "end-Msg1",
+      "start-Msg2",
+      "end-Msg2"
+    ]);
   });
 });
