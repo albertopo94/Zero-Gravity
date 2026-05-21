@@ -118,6 +118,8 @@ export const gogTool: Tool = {
       if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
       if (process.env.HOME !== undefined) env.HOME = process.env.HOME;
       if (process.env.GOG_ACCOUNT !== undefined) env.GOG_ACCOUNT = process.env.GOG_ACCOUNT;
+      if (process.env.GOG_KEYRING_BACKEND !== undefined) env.GOG_KEYRING_BACKEND = process.env.GOG_KEYRING_BACKEND;
+      if (process.env.GOG_KEYRING_PASSWORD !== undefined) env.GOG_KEYRING_PASSWORD = process.env.GOG_KEYRING_PASSWORD;
 
       // Execute gog directly without a shell wrapper to prevent command injection
       const { stdout, stderr } = await execFilePromise('gog', fullArgs, {
