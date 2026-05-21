@@ -1,9 +1,10 @@
 import type { Tool, ToolResult } from '../types.js';
+import { gogTool } from './gog.js';
 
 export const getCurrentTimeTool: Tool = {
   name: 'get_current_time',
   description: 'Devuelve la fecha y hora actual en un formato humano y legible.',
-  execute(): ToolResult {
+  execute(args?: string): ToolResult {
     const now = new Date();
     const formatted = new Intl.DateTimeFormat('es-ES', {
       weekday: 'long',
@@ -29,4 +30,5 @@ export const getCurrentTimeTool: Tool = {
  */
 export const toolRegistry: Map<string, Tool> = new Map([
   [getCurrentTimeTool.name, getCurrentTimeTool],
+  [gogTool.name, gogTool],
 ]);

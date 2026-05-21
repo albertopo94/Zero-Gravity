@@ -13,9 +13,18 @@ ESTÁ PROHIBIDO el uso de Markdown (negritas, cursivas, listas, encabezados). En
 Capacidades de voz: Tienes la capacidad de responder con audio. Cuando el usuario pida una respuesta de voz o te mande un audio, el sistema convierte tu respuesta a voz automáticamente. NUNCA digas que no puedes hablar o que no tienes voz. Simplemente responde con el contenido solicitado en texto, y el sistema se encarga de la síntesis de audio.
 
 Herramientas:
-- get_current_time: Obtiene la hora actual.
+- get_current_time: Obtiene la hora actual. No requiere argumentos.
+- gog: CLI de Google Workspace. Permite buscar y consultar Gmail, Calendar, Drive, Contacts, Sheets y Docs. Es ESTRICTAMENTE de solo lectura.
+  Ejemplos de uso:
+  - Gmail: [TOOL: gog gmail search 'newer_than:7d']
+  - Calendar: [TOOL: gog calendar events primary]
+  - Drive: [TOOL: gog drive search 'name contains "Proyecto"']
+  - Contacts: [TOOL: gog contacts list]
+  - Sheets: [TOOL: gog sheets get "ID_DE_HOJA" "Hoja1!A1:B10"]
+  - Docs: [TOOL: gog docs cat "ID_DE_DOCUMENTO"]
+  Nota: Envuelve los argumentos de búsqueda o con espacios en comillas simples (') o comillas dobles (").
 
-Uso de herramientas: Responde EXACTAMENTE con [TOOL: nombre_herramienta] si es necesario.`;
+Uso de herramientas: Responde EXACTAMENTE con [TOOL: nombre_herramienta] o [TOOL: nombre_herramienta argumentos] si es necesario.`;
 
 /**
  * Ejecuta el loop del agente para un mensaje de usuario.
@@ -43,33 +52,50 @@ export async function runAgentLoop(
     iteration++;
     console.log(`[AgentLoop] Iteración ${iteration}/${maxIterations}`);
 
-    // Llamar al router de IA
-    const { stream, provider } = await router.chat(messages);
-
-    // Recolectar respuesta del stream
+    let stream;
+    let provider = 'IA';
     let response = '';
-    for await (const token of stream) {
-      response += token;
+
+    try {
+      const chatResult = await router.chat(messages);
+      stream = chatResult.stream;
+      provider = chatResult.provider;
+
+      for await (const token of stream) {
+        response += token;
+      }
+    } catch (chatError) {
+      console.error('[AgentLoop] Error en la comunicación con el proveedor de IA:', chatError);
+      finalResponse = '⚠️ Hubo un error de conexión con la IA. Por favor, intenta de nuevo.';
+      await saveMessage(userId, 'assistant', finalResponse);
+      break;
     }
 
     response = response.trim();
     console.log(`[AgentLoop] Respuesta de ${provider}: ${response.substring(0, 100)}...`);
 
     // Verificar si la respuesta solicita una herramienta
-    const toolMatch = response.match(/\[TOOL:\s*(\w+)\]/);
+    const toolMatch = response.match(/\[TOOL:\s*(\w+)(?:\s+([\s\S]+?))?\]/);
     if (toolMatch) {
       const toolName = toolMatch[1];
+      const toolArgs = toolMatch[2]?.trim();
       const tool = toolRegistry.get(toolName);
 
       if (tool) {
-        console.log(`[AgentLoop] Ejecutando herramienta: ${toolName}`);
-        const result = tool.execute();
+        console.log(`[AgentLoop] Ejecutando herramienta: ${toolName}${toolArgs ? ` con argumentos: ${toolArgs}` : ''}`);
+        const result = await tool.execute(toolArgs);
+
+        // Truncate tool output if it exceeds 4000 characters
+        let toolOutput = result.data;
+        if (toolOutput.length > 4000) {
+          toolOutput = toolOutput.substring(0, 4000) + '\n\n[Salida truncada por límite de contexto]';
+        }
 
         // Agregar resultado de la herramienta al historial
         messages.push({ role: 'assistant', content: response });
         messages.push({
           role: 'system',
-          content: `Resultado de ${toolName}: ${result.data}`,
+          content: `Resultado de ${toolName}: ${toolOutput}`,
         });
 
         // Continuar el loop para que el LLM procese el resultado

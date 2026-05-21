@@ -52,7 +52,7 @@ export interface ToolResult {
 export interface Tool {
   name: string;
   description: string;
-  execute(): ToolResult;
+  execute(args?: string): ToolResult | Promise<ToolResult>;
 }
 
 // ─── Configuración del agente ───────────────────────────────
