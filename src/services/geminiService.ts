@@ -87,7 +87,9 @@ export class GeminiService implements AIService {
       },
     });
 
-    const result = await chat.sendMessageStream(finalLastMessageContent);
+    const result = await chat.sendMessageStream(finalLastMessageContent, {
+      signal: options?.abortSignal,
+    });
 
     return (async function* () {
       for await (const chunk of result.stream) {

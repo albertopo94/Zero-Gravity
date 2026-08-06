@@ -32,7 +32,7 @@ export class CerebrasService implements AIService {
       max_completion_tokens: options?.max_tokens ?? 20000,
       temperature: options?.temperature ?? 0.7,
       top_p: 0.8,
-    });
+    }, { signal: options?.abortSignal });
 
     return (async function* () {
       for await (const chunk of stream as AsyncIterable<CerebrasStreamChunk>) {
