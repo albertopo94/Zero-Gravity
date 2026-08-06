@@ -49,7 +49,7 @@ export async function runAgentLoop(
 
   userLocks.set(userId, newLock);
 
-  await existingLock;
+  await existingLock.catch(() => {});
 
   try {
     return await runAgentLoopInternal(userId, userMessage, router, maxIterations);
@@ -59,6 +59,39 @@ export async function runAgentLoop(
       userLocks.delete(userId);
     }
   }
+}
+
+/**
+ * Extrae una llamada a herramienta de una respuesta, manejando corchetes anidados.
+ */
+export function extractToolCall(text: string): { toolName: string; toolArgs?: string } | null {
+  const toolStart = text.match(/\[TOOL:\s*(\w+)/);
+  if (!toolStart || toolStart.index === undefined) return null;
+
+  const toolName = toolStart[1];
+  const startIdx = toolStart.index + toolStart[0].length;
+  let bracketDepth = 1;
+  let endIdx = -1;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+    if (char === '[') bracketDepth++;
+    else if (char === ']') {
+      bracketDepth--;
+      if (bracketDepth === 0) {
+        endIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (endIdx === -1) return null;
+
+  const argsStr = text.substring(startIdx, endIdx).trim();
+  return {
+    toolName,
+    toolArgs: argsStr || undefined,
+  };
 }
 
 async function runAgentLoopInternal(
@@ -107,15 +140,14 @@ async function runAgentLoopInternal(
     console.log(`[AgentLoop] Respuesta de ${provider}: ${response.substring(0, 100)}...`);
 
     // Verificar si la respuesta solicita una herramienta
-    const toolMatch = response.match(/\[TOOL:\s*(\w+)(?:\s+([\s\S]+?))?\]/);
-    if (toolMatch) {
+    const toolCall = extractToolCall(response);
+    if (toolCall) {
       if (iteration === maxIterations) {
         console.log(`[AgentLoop] Límite de iteraciones alcanzado en llamada a herramienta, omitiendo ejecución.`);
         await saveMessage(userId, 'assistant', response, provider);
         break;
       }
-      const toolName = toolMatch[1];
-      const toolArgs = toolMatch[2]?.trim();
+      const { toolName, toolArgs } = toolCall;
       const tool = toolRegistry.get(toolName);
 
       if (tool) {

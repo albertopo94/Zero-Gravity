@@ -25,7 +25,7 @@ export class GroqService implements AIService {
       top_p: 1,
       stream: true,
       stop: null,
-    });
+    }, { signal: options?.abortSignal });
 
     return (async function* () {
       for await (const chunk of stream) {

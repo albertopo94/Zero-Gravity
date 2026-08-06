@@ -244,4 +244,12 @@ describe("runAgentLoop - Truncation and Stream Error Handling", () => {
       "end-Msg2"
     ]);
   });
+
+  test("extractToolCall should correctly parse tool calls with nested brackets in arguments", async () => {
+    const { extractToolCall } = await import("./agentLoop.js");
+    const result = extractToolCall("[TOOL: gog gmail search 'subject:[URGENTE]']");
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe("gog");
+    expect(result?.toolArgs).toBe("gmail search 'subject:[URGENTE]'");
+  });
 });

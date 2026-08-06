@@ -41,6 +41,7 @@ export class OpenRouterService implements AIService {
         max_tokens: options?.max_tokens ?? 2048,
         stream: true,
       }),
+      signal: options?.abortSignal,
     });
 
     if (!response.ok) {

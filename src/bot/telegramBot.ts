@@ -91,10 +91,10 @@ export function createBot(
   // Comando /start
   bot.command('start', async (ctx) => {
     await ctx.reply(
-      '🚀 *ZeroGravity* activo\\.\\n\\n' +
-        'Soy tu agente de IA personal\\. Envíame cualquier mensaje o audio y te responderé\\.\\n\\n' +
-        'Comandos:\\n' +
-        '/clear \\- Limpiar historial\\n' +
+      '🚀 *ZeroGravity* activo\\.\n\n' +
+        'Soy tu agente de IA personal\\. Envíame cualquier mensaje o audio y te responderé\\.\n\n' +
+        'Comandos:\n' +
+        '/clear \\- Limpiar historial\n' +
         '/status \\- Estado del sistema',
       { parse_mode: 'MarkdownV2' }
     );
@@ -163,6 +163,9 @@ export function createBot(
       const file = await ctx.getFile();
       const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
       const audioResponse = await fetch(fileUrl);
+      if (!audioResponse.ok) {
+        throw new Error(`Error descargando audio de Telegram (status ${audioResponse.status})`);
+      }
       const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
 
       // 2. Transcribir con el nuevo router

@@ -45,7 +45,7 @@ export class AIRouter {
    * Si el proveedor seleccionado falla, intenta los demás antes de rendirse.
    */
   async chat(messages: ChatMessage[], options?: ChatOptions): Promise<AIRouterResult> {
-    const healthyProviders = this.providers.filter((p) => this.statusMap.get(p.name)?.up === true);
+    const healthyProviders = this.providers.filter((p) => this.statusMap.get(p.name)?.up !== false);
 
     if (healthyProviders.length === 0) {
       throw new Error('[AIRouter] No hay proveedores de IA disponibles (todos están DOWN o no se ha verificado su estado).');
