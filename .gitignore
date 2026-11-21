@@ -14,3 +14,9 @@ dist/
 *.pem
 *.key
 client_secret*.json
+credentials*.json
+token*.json
+*.sqlite*
+*.log
+coverage/
+*.tsbuildinfo
