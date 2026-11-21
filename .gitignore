@@ -1,8 +1,16 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 .DS_Store
 .atl/
+.vscode/
 :memory:
+*.pem
+*.key
+client_secret*.json
